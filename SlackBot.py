@@ -4,6 +4,7 @@ import re
 import urllib
 import urllib.request
 import json
+import spellcheck
 from slackclient import SlackClient
 
 
@@ -26,22 +27,36 @@ def handle_command(command, channel):
     """
     response = "Not sure what you mean. I'm currently a basic bot :robot_face:. Available commands are \"!echo\" and \"!weather [city]\"."
     if command.startswith(ECHOCMD):
-        response = re.sub('echo','',command)
+        response = re.sub('!echo','',command)
+        slack_client.api_call("chat.postMessage", channel=channel,
+                              text=response, as_user=True)
     if command.startswith(WEATHERCMD):
-        city_province = re.sub('weather','',command)
-        #city = city_province.split(",")[0]
-        #province = city_province.split(",",1)[1]
-        url = "http://api.openweathermap.org/data/2.5/weather?q={0}&appid={1}&units=metric".format(city_province,OWAPI_KEY)
-        url.replace(" ","")
-        resp = urllib.request.urlopen(url.replace(" ",""))
-        str_response = resp.read().decode('utf-8')
-        data = json.loads(str_response)
-        location = data["name"]
-        temperature = data["main"]["temp"]
-        forecast = data["weather"][0]["main"]
-        response = "The weather in {0} is {1} degrees Celcius. The forcast is {2}.".format(location,int(round(temperature)),forecast)
-    slack_client.api_call("chat.postMessage", channel=channel,
-                          text=response, as_user=True)
+        city_province = re.sub('!weather','',command)
+        try:
+            url = "http://api.openweathermap.org/data/2.5/weather?q={0}&appid={1}&units=metric".format(city_province,OWAPI_KEY)
+            resp = urllib.request.urlopen(url.replace(" ",""))
+            str_response = resp.read().decode('utf-8')
+            data = json.loads(str_response)
+            location = data["name"]
+            temperature = data["main"]["temp"]
+            forecast = data["weather"][0]["main"]
+            """
+            Openweathermap tries its best to figure out what the user meant if they mispelled something. To use spellcheck.py replace "location" with following line of code:
+            spellcheck.correct(city_province).capitalize()          
+              
+            """
+            response = "The weather in {0} is {1} degrees Celcius. The forecast is {2}.".format(location,int(round(temperature)),forecast)
+            slack_client.api_call("chat.postMessage", channel=channel,
+                                  text=response, as_user=True)
+        except urllib.request.HTTPError as err:
+            if err.code == 404:
+                slack_client.api_call("chat.postMessage", channel=channel,
+                                      text="Sorry I could not find the weather for {0}!".format(city_province.capitalize()), as_user=True)
+                
+            elif err.code == 502:
+                slack_client.api_call("chat.postMessage", channel=channel,
+                          text="Temporary server error. Please try again.".format(city_province), as_user=True)
+
 
 
 def parse_slack_output(slack_rtm_output):
